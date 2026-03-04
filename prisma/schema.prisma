@@ -1,0 +1,513 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums (L.I. 2431 Taxonomies) ──────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  MINING_COMPANY
+  SUPPLIER
+  REGULATOR
+}
+
+enum OrganizationType {
+  MINING_COMPANY
+  SUPPLIER
+  REGULATORY_BODY
+}
+
+enum OwnershipTier {
+  WHOLLY_GHANAIAN           // 100% Ghanaian-owned
+  MAJORITY_GHANAIAN_JV      // 51%+ Ghanaian in joint venture
+  MINORITY_GHANAIAN_JV      // <51% Ghanaian in joint venture
+  FOREIGN_WITH_LOCAL_PARTNER // Foreign with mandatory local partner
+  FOREIGN_INCORPORATED       // Foreign-incorporated, registered in Ghana
+}
+
+enum SupplierCategory {
+  MINING_SERVICES
+  TECHNICAL_ENGINEERING
+  EQUIPMENT_SUPPLY
+  CONSUMABLES
+  FUEL_ENERGY
+  TRANSPORT_LOGISTICS
+  CAMP_MANAGEMENT
+  FINANCIAL_SERVICES
+  LEGAL_SERVICES
+  IT_TELECOMMUNICATIONS
+  ENVIRONMENTAL_SERVICES
+  SECURITY_SERVICES
+  CONSTRUCTION
+  LABORATORY_ASSAYING
+  TRAINING_HR
+  OTHER
+}
+
+enum SupplierStatus {
+  PENDING_REVIEW
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ExpatriatePositionCategory {
+  EXECUTIVE_MANAGEMENT
+  TECHNICAL_PROFESSIONAL
+  SUPERVISORY
+  SKILLED_TRADE
+}
+
+enum ExpatriateStatus {
+  ACTIVE
+  EXPIRED
+  PENDING_RENEWAL
+  REVOKED
+}
+
+enum DocumentType {
+  BUSINESS_REGISTRATION
+  TAX_CLEARANCE
+  MINERALS_COMMISSION_LICENSE
+  OWNERSHIP_CERTIFICATE
+  FINANCIAL_STATEMENT
+  CAPABILITY_CERTIFICATE
+  WORK_PERMIT
+  ENVIRONMENTAL_PERMIT
+  INSURANCE_CERTIFICATE
+  QUALITY_CERTIFICATION
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum ComplianceReportStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  REVISION_REQUESTED
+}
+
+enum ProcurementStatus {
+  DRAFT
+  OPEN
+  EVALUATION
+  AWARDED
+  CLOSED
+  CANCELLED
+}
+
+enum BidStatus {
+  SUBMITTED
+  UNDER_EVALUATION
+  SHORTLISTED
+  AWARDED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ContractStatus {
+  ACTIVE
+  COMPLETED
+  TERMINATED
+  SUSPENDED
+}
+
+// ─── Core Models ────────────────────────────────────────────────────────────
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  phone          String?
+  role           UserRole
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  isActive       Boolean      @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  @@index([organizationId])
+  @@index([role])
+}
+
+model Organization {
+  id                 String           @id @default(cuid())
+  name               String
+  type               OrganizationType
+  registrationNumber String           @unique
+  tinNumber          String?          @unique
+  email              String?
+  phone              String?
+  address            String?
+  city               String?
+  region             String?
+  website            String?
+  description        String?
+  ownershipTier      OwnershipTier?
+  ghanaianOwnershipPct Float?
+  isVerified         Boolean          @default(false)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  users              User[]
+  ownershipRecords   OwnershipRecord[]
+  supplierProfile    SupplierProfile?
+  miningCompanyProfile MiningCompanyProfile?
+  documents          Document[]
+  complianceReports  ComplianceReport[]
+  notifications      Notification[]
+
+  @@index([type])
+  @@index([ownershipTier])
+}
+
+model OwnershipRecord {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  shareholderName String
+  nationality     String
+  isGhanaian      Boolean
+  ownershipPct    Float
+  verifiedAt      DateTime?
+  verifiedBy      String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([organizationId])
+}
+
+// ─── Supplier Models ────────────────────────────────────────────────────────
+
+model SupplierProfile {
+  id                  String           @id @default(cuid())
+  organizationId      String           @unique
+  organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  categories          SupplierCategory[]
+  subcategories       String[]
+  yearsInBusiness     Int?
+  employeeCount       Int?
+  ghanaianEmployeePct Float?
+  annualRevenue       Float?
+  qualificationScore  Float?
+  status              SupplierStatus   @default(PENDING_REVIEW)
+  reviewedBy          String?
+  reviewedAt          DateTime?
+  reviewNotes         String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  capabilities       SupplierCapability[]
+  bids               Bid[]
+  contracts          Contract[]
+  complianceScores   SupplierComplianceScore[]
+
+  @@index([status])
+}
+
+model SupplierCapability {
+  id             String          @id @default(cuid())
+  supplierId     String
+  supplier       SupplierProfile @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  category       SupplierCategory
+  description    String
+  certifications String[]
+  equipmentOwned String[]
+  projectHistory String[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([supplierId])
+}
+
+// ─── Mining Company Models ──────────────────────────────────────────────────
+
+model MiningCompanyProfile {
+  id                  String       @id @default(cuid())
+  organizationId      String       @unique
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mineralRightNumber  String?
+  commodities         String[]
+  miningDistrict      String?
+  approvedExpatQuota  Int          @default(0)
+  currentExpatCount   Int          @default(0)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  procurementOpportunities ProcurementOpportunity[]
+  expatriateRecords        ExpatriateRecord[]
+  localSpendRecords        LocalSpendRecord[]
+  expatriateQuotaSnapshots ExpatriateQuotaSnapshot[]
+  contracts                Contract[]
+}
+
+// ─── Compliance Models ──────────────────────────────────────────────────────
+
+model LocalSpendRecord {
+  id                String              @id @default(cuid())
+  miningCompanyId   String
+  miningCompany     MiningCompanyProfile @relation(fields: [miningCompanyId], references: [id], onDelete: Cascade)
+  period            String              // e.g., "2025-Q1"
+  category          SupplierCategory
+  totalSpend        Float
+  localSpend        Float
+  foreignSpend      Float
+  localSpendPct     Float
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([miningCompanyId, period, category])
+  @@index([miningCompanyId])
+  @@index([period])
+}
+
+model ExpatriateRecord {
+  id                    String                    @id @default(cuid())
+  miningCompanyId       String
+  miningCompany         MiningCompanyProfile      @relation(fields: [miningCompanyId], references: [id], onDelete: Cascade)
+  fullName              String
+  nationality           String
+  passportNumber        String?
+  positionTitle         String
+  positionCategory      ExpatriatePositionCategory
+  department            String?
+  startDate             DateTime
+  endDate               DateTime?
+  workPermitNumber      String?
+  workPermitExpiry      DateTime?
+  hasSuccessionPlan     Boolean                   @default(false)
+  understudyName        String?
+  understudyPosition    String?
+  localizationTargetDate DateTime?
+  status                ExpatriateStatus          @default(ACTIVE)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([miningCompanyId])
+  @@index([status])
+  @@index([positionCategory])
+}
+
+model ExpatriateQuotaSnapshot {
+  id               String              @id @default(cuid())
+  miningCompanyId  String
+  miningCompany    MiningCompanyProfile @relation(fields: [miningCompanyId], references: [id], onDelete: Cascade)
+  snapshotDate     DateTime
+  approvedQuota    Int
+  currentExpatCount Int
+  totalEmployeeCount Int
+  expatRatio       Float
+  isCompliant      Boolean
+  notes            String?
+  createdAt        DateTime            @default(now())
+
+  @@index([miningCompanyId])
+  @@index([snapshotDate])
+}
+
+model SupplierComplianceScore {
+  id               String          @id @default(cuid())
+  supplierId       String
+  supplier         SupplierProfile @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  period           String          // e.g., "2025-Q1"
+  ownershipScore   Float
+  employmentScore  Float
+  procurementScore Float
+  capacityScore    Float
+  documentScore    Float
+  compositeScore   Float
+  calculatedAt     DateTime        @default(now())
+
+  @@unique([supplierId, period])
+  @@index([supplierId])
+}
+
+model ComplianceReport {
+  id                    String                 @id @default(cuid())
+  organizationId        String
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  period                String                 // e.g., "2025-Q1"
+  localSpendRatio       Float?
+  expatQuotaCompliance  Boolean?
+  ghanaianEmploymentPct Float?
+  successionPlanPct     Float?
+  overallScore          Float?
+  status                ComplianceReportStatus @default(DRAFT)
+  submittedAt           DateTime?
+  reviewedBy            String?
+  reviewedAt            DateTime?
+  reviewNotes           String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@unique([organizationId, period])
+  @@index([organizationId])
+  @@index([status])
+}
+
+// ─── Procurement / E-Marketplace Models ─────────────────────────────────────
+
+model ProcurementOpportunity {
+  id                   String              @id @default(cuid())
+  miningCompanyId      String
+  miningCompany        MiningCompanyProfile @relation(fields: [miningCompanyId], references: [id], onDelete: Cascade)
+  title                String
+  description          String
+  category             SupplierCategory
+  estimatedValue       Float?
+  currency             String              @default("GHS")
+  closingDate          DateTime
+  status               ProcurementStatus   @default(DRAFT)
+  requiredOwnershipTier OwnershipTier?
+  isLocalOnly          Boolean             @default(false)
+  requirements         String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  bids                 Bid[]
+  contracts            Contract[]
+
+  @@index([miningCompanyId])
+  @@index([status])
+  @@index([category])
+}
+
+model Bid {
+  id                   String                @id @default(cuid())
+  procurementId        String
+  procurement          ProcurementOpportunity @relation(fields: [procurementId], references: [id], onDelete: Cascade)
+  supplierId           String
+  supplier             SupplierProfile       @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  amount               Float
+  currency             String                @default("GHS")
+  technicalProposal    String?
+  localContentPct      Float?
+  deliveryTimeline     String?
+  evaluationScore      Float?
+  status               BidStatus             @default(SUBMITTED)
+  submittedAt          DateTime              @default(now())
+  evaluatedAt          DateTime?
+  evaluationNotes      String?
+
+  @@unique([procurementId, supplierId])
+  @@index([procurementId])
+  @@index([supplierId])
+}
+
+model Contract {
+  id                     String                @id @default(cuid())
+  procurementId          String?
+  procurement            ProcurementOpportunity? @relation(fields: [procurementId], references: [id])
+  supplierId             String
+  supplier               SupplierProfile       @relation(fields: [supplierId], references: [id])
+  miningCompanyId        String
+  miningCompany          MiningCompanyProfile  @relation(fields: [miningCompanyId], references: [id])
+  contractNumber         String                @unique
+  title                  String
+  value                  Float
+  currency               String                @default("GHS")
+  startDate              DateTime
+  endDate                DateTime
+  localContentCommitment Float?                // Committed local content %
+  actualLocalSpendPct    Float?                // Actual achieved %
+  status                 ContractStatus        @default(ACTIVE)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  @@index([supplierId])
+  @@index([miningCompanyId])
+}
+
+// ─── Document Management ────────────────────────────────────────────────────
+
+model Document {
+  id              String         @id @default(cuid())
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type            DocumentType
+  fileName        String
+  fileUrl         String
+  fileSize        Int?
+  mimeType        String?
+  status          DocumentStatus @default(PENDING)
+  expiryDate      DateTime?
+  verifiedBy      String?
+  verifiedAt      DateTime?
+  rejectionReason String?
+  uploadedAt      DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([status])
+}
+
+// ─── Supporting Models ──────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id             String        @id @default(cuid())
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  title          String
+  message        String
+  link           String?
+  isRead         Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+
+  @@index([userId, isRead])
+  @@index([organizationId])
+}
+
+model LocalProcurementListItem {
+  id                String          @id @default(cuid())
+  editionNumber     Int
+  itemCode          String          @unique
+  itemName          String
+  category          SupplierCategory
+  description       String?
+  requiredOwnership OwnershipTier?
+  isExclusiveGhana  Boolean         @default(false)
+  effectiveDate     DateTime
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([category])
+}
